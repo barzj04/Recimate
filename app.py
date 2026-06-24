@@ -1,16 +1,18 @@
 import streamlit as st
 from supabase import create_client, Client
-from datetime import datetime, timedelta, date
+from datetime import timedelta, date, datetime
+from zoneinfo import ZoneInfo
 
 # --- AUTH CONFIG ---
 USERS = {
     "arleen": {"password": "pass1", "display": "Arleen"},
-    "rachel": {"password": "pass2", "display": "Rachel"},  # lowercase key
+    "rachel": {"password": "pass2", "display": "Rachel"},
 }
 ROOMMATE_PAIRS = {
-    "arleen": "rachel",   # ✅ lowercase
-    "rachel": "arleen",   # ✅ lowercase
+    "arleen": "rachel",
+    "rachel": "arleen",
 }
+
 # --- SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
@@ -20,6 +22,7 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+MYT = ZoneInfo("Asia/Kuala_Lumpur")
 
 # --- WEEK HELPERS ---
 def get_week_dates(offset=0):
@@ -70,6 +73,9 @@ def toggle_paid_back(grocery_id, current_val):
 def delete_grocery(grocery_id):
     supabase.table("groceries").delete().eq("id", grocery_id).execute()
 
+def clear_all_groceries():
+    supabase.table("groceries").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Kitchen Co-op", page_icon="🍳", layout="wide")
 
@@ -93,7 +99,7 @@ if not st.session_state.logged_in:
                 st.session_state.week_offset = 0
                 st.rerun()
             else:
-                st.error("Wrong username or password.")
+                st.error("❌ Wrong username or password.")
     st.stop()
 
 # --- SESSION VARS ---
@@ -107,21 +113,41 @@ if "week_offset" not in st.session_state:
 if "db_schedules" not in st.session_state:
     st.session_state.db_schedules = fetch_schedules()
 
+# Confirm-delete state for groceries
+if "confirm_clear_groceries" not in st.session_state:
+    st.session_state.confirm_clear_groceries = False
+if "confirm_delete_recipe" not in st.session_state:
+    st.session_state.confirm_delete_recipe = None
+if "confirm_delete_grocery" not in st.session_state:
+    st.session_state.confirm_delete_grocery = None
+
+# Toast-style feedback flags
+if "toast" not in st.session_state:
+    st.session_state.toast = None
+
+# Show toast if set
+if st.session_state.toast:
+    st.toast(st.session_state.toast)
+    st.session_state.toast = None
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.markdown(f"### 👤 {display_name}")
     st.caption(f"Paired with: {partner_display}")
     st.divider()
-    now = datetime.now()
-    st.caption(f"🕐 {now.strftime('%A, %d %b %Y')}")
-    st.caption(f"⏰ {now.strftime('%I:%M %p')}")
+    now = datetime.now(MYT)
+    st.caption(f"🗓️ {now.strftime('%A, %d %b %Y')}")
+    st.caption(f"⏰ {now.strftime('%I:%M %p')} MYT")
     st.divider()
     if st.button("🔄 Refresh Data", use_container_width=True):
         st.session_state.db_schedules = fetch_schedules()
+        st.session_state.toast = "🔄 Data refreshed!"
         st.rerun()
     st.divider()
     if st.button("🚪 Log Out", use_container_width=True):
-        for key in ["logged_in", "username", "db_schedules", "week_offset"]:
+        for key in ["logged_in", "username", "db_schedules", "week_offset",
+                    "confirm_clear_groceries", "confirm_delete_recipe",
+                    "confirm_delete_grocery", "toast"]:
             st.session_state.pop(key, None)
         st.rerun()
 
@@ -135,7 +161,6 @@ tab1, tab2, tab3 = st.tabs(["📅 Schedule", "💡 Recipes", "🛒 Groceries"])
 # TAB 1: SCHEDULE
 # ──────────────────────────────────────────
 with tab1:
-    # Week navigation
     col_prev, col_label, col_next = st.columns([1, 3, 1])
     with col_prev:
         if st.button("◀ Prev Week"):
@@ -157,11 +182,10 @@ with tab1:
 
     db_schedules = st.session_state.db_schedules
     my_sched = db_schedules.get(username, {})
-    partner_sched = db_schedules.get(partner_username, {})
 
     my_updates = {}
-    st.markdown(f"### 👤 Your Availability This Week")
-    st.caption("Tick the meals you're free for each day.")
+    st.markdown("### 👤 Your Availability This Week")
+    st.caption("Tick the meals you're free for each day, then hit Save.")
 
     for i, day in enumerate(DAYS_OF_WEEK):
         day_date = week_dates[i]
@@ -181,16 +205,14 @@ with tab1:
     if st.button("💾 Save My Schedule", type="primary", use_container_width=True):
         update_db_schedule(username, my_updates)
         st.session_state.db_schedules = fetch_schedules()
-        st.success("✅ Schedule saved!")
+        st.session_state.toast = "✅ Schedule saved!"
         st.rerun()
 
     st.write("---")
 
-    # Matches
     st.markdown(f"### 🤝 Overlap with {partner_display}")
-    db_schedules = st.session_state.db_schedules
-    my_fresh = db_schedules.get(username, {})
-    partner_fresh = db_schedules.get(partner_username, {})
+    my_fresh = st.session_state.db_schedules.get(username, {})
+    partner_fresh = st.session_state.db_schedules.get(partner_username, {})
 
     lunch_matches = [d for d in DAYS_OF_WEEK if my_fresh.get(d, {}).get("Lunch") and partner_fresh.get(d, {}).get("Lunch")]
     dinner_matches = [d for d in DAYS_OF_WEEK if my_fresh.get(d, {}).get("Dinner") and partner_fresh.get(d, {}).get("Dinner")]
@@ -226,7 +248,7 @@ with tab2:
         if submitted:
             if new_recipe.strip():
                 add_db_recipe(new_recipe.strip(), new_link.strip(), new_when)
-                st.success("Recipe added!")
+                st.session_state.toast = "🍽️ Recipe added!"
                 st.rerun()
             else:
                 st.warning("Please enter a dish name.")
@@ -245,9 +267,24 @@ with tab2:
                     line += f" — [🔗 Recipe]({item['link']})"
                 st.markdown(line)
             with col_del:
-                if st.button("🗑️", key=f"del_r_{item['id']}"):
-                    delete_db_recipe(item['id'])
-                    st.rerun()
+                # Confirm delete for recipes
+                if st.session_state.confirm_delete_recipe == item['id']:
+                    st.warning("Sure?")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("✅", key=f"yes_r_{item['id']}"):
+                            delete_db_recipe(item['id'])
+                            st.session_state.confirm_delete_recipe = None
+                            st.session_state.toast = "🗑️ Recipe deleted."
+                            st.rerun()
+                    with c2:
+                        if st.button("❌", key=f"no_r_{item['id']}"):
+                            st.session_state.confirm_delete_recipe = None
+                            st.rerun()
+                else:
+                    if st.button("🗑️", key=f"del_r_{item['id']}"):
+                        st.session_state.confirm_delete_recipe = item['id']
+                        st.rerun()
     else:
         st.caption("The pool is empty. Drop some recipe ideas above!")
 
@@ -257,7 +294,6 @@ with tab2:
 with tab3:
     st.header("🛒 Shared Groceries")
 
-    # Add item form
     with st.form("grocery_form", clear_on_submit=True):
         col_i, col_p, col_who = st.columns([2, 1, 1])
         with col_i:
@@ -270,7 +306,7 @@ with tab3:
         if g_submit:
             if g_item.strip():
                 add_grocery(g_item.strip(), g_price, g_paid_by)
-                st.success("Item added!")
+                st.session_state.toast = f"🛒 '{g_item.strip()}' added!"
                 st.rerun()
             else:
                 st.warning("Please enter an item name.")
@@ -279,10 +315,8 @@ with tab3:
     groceries = fetch_groceries()
 
     if groceries:
-        # Bill summary
         total = sum(g.get("price", 0) or 0 for g in groceries)
         each_owes = total / 2
-
         paid_by_me = sum(g.get("price", 0) or 0 for g in groceries if g.get("paid_by") == display_name)
         paid_by_partner = sum(g.get("price", 0) or 0 for g in groceries if g.get("paid_by") == partner_display)
 
@@ -296,8 +330,6 @@ with tab3:
             st.metric(f"Paid by {partner_display}", f"RM {paid_by_partner:.2f}")
 
         st.write("")
-
-        # Who owes who
         balance = paid_by_me - each_owes
         if abs(balance) < 0.01:
             st.success("✅ All settled up!")
@@ -307,9 +339,28 @@ with tab3:
             st.info(f"💸 **{display_name}** owes **{partner_display}** RM {abs(balance):.2f}")
 
         st.write("---")
+
+        # Clear all button with confirm
+        if st.session_state.confirm_clear_groceries:
+            st.warning("⚠️ This will delete ALL grocery items and reset the bill. Are you sure?")
+            cc1, cc2, cc3 = st.columns([1, 1, 4])
+            with cc1:
+                if st.button("✅ Yes, clear all", type="primary"):
+                    clear_all_groceries()
+                    st.session_state.confirm_clear_groceries = False
+                    st.session_state.toast = "🧹 Grocery list cleared!"
+                    st.rerun()
+            with cc2:
+                if st.button("❌ Cancel"):
+                    st.session_state.confirm_clear_groceries = False
+                    st.rerun()
+        else:
+            if st.button("🧹 Clear All & Restart", use_container_width=False):
+                st.session_state.confirm_clear_groceries = True
+                st.rerun()
+
         st.markdown("### 🧾 Grocery List")
 
-        # Header row
         h1, h2, h3, h4, h5 = st.columns([2.5, 1, 1.2, 1.5, 0.5])
         h1.markdown("**Item**")
         h2.markdown("**Price**")
@@ -332,10 +383,21 @@ with tab3:
                 else:
                     if st.button("Mark as paid back", key=f"pb_{g['id']}"):
                         toggle_paid_back(g["id"], paid_back)
+                        st.session_state.toast = "💰 Marked as paid back!"
                         st.rerun()
             with c5:
-                if st.button("🗑️", key=f"del_g_{g['id']}"):
-                    delete_grocery(g["id"])
-                    st.rerun()
+                if st.session_state.confirm_delete_grocery == g['id']:
+                    if st.button("✅", key=f"yes_g_{g['id']}"):
+                        delete_grocery(g['id'])
+                        st.session_state.confirm_delete_grocery = None
+                        st.session_state.toast = "🗑️ Item deleted."
+                        st.rerun()
+                    if st.button("❌", key=f"no_g_{g['id']}"):
+                        st.session_state.confirm_delete_grocery = None
+                        st.rerun()
+                else:
+                    if st.button("🗑️", key=f"del_g_{g['id']}"):
+                        st.session_state.confirm_delete_grocery = g['id']
+                        st.rerun()
     else:
         st.caption("No groceries added yet. Add your first item above!")
