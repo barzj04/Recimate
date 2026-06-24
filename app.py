@@ -2,12 +2,12 @@ import streamlit as st
 from supabase import create_client, Client
 import json
 
-# Initialize Supabase connection safely from environment secrets
 @st.cache_resource
 def init_supabase() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
+    url = "https://qwpladpytaygcrvuxfqq.supabase.co"
+    key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3cGxhZHB5tGF5Z2NydnV4ZnFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNzM2OTgsImV4cCI6MjA5Nzg0OTY5OH0.ChL-UX2sT351Yd9i5RxFOLwNNpPG-FK8EYrHkJXrCrY"
     return create_client(url, key)
+    
 supabase = init_supabase()
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
