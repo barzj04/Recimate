@@ -79,6 +79,25 @@ def clear_all_groceries():
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Kitchen Co-op", page_icon="🍳", layout="wide")
 
+# Hide default sidebar completely
+st.markdown("""
+    <style>
+        [data-testid="stSidebar"] { display: none; }
+        [data-testid="collapsedControl"] { display: none; }
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.6rem 1rem;
+            background: #f0f2f6;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+        .top-bar-left { font-size: 0.9rem; color: #444; }
+        .top-bar-right { font-size: 0.85rem; color: #666; text-align: right; }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- LOGIN ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -112,49 +131,46 @@ if "week_offset" not in st.session_state:
     st.session_state.week_offset = 0
 if "db_schedules" not in st.session_state:
     st.session_state.db_schedules = fetch_schedules()
-
-# Confirm-delete state for groceries
 if "confirm_clear_groceries" not in st.session_state:
     st.session_state.confirm_clear_groceries = False
 if "confirm_delete_recipe" not in st.session_state:
     st.session_state.confirm_delete_recipe = None
 if "confirm_delete_grocery" not in st.session_state:
     st.session_state.confirm_delete_grocery = None
-
-# Toast-style feedback flags
 if "toast" not in st.session_state:
     st.session_state.toast = None
 
-# Show toast if set
 if st.session_state.toast:
     st.toast(st.session_state.toast)
     st.session_state.toast = None
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.markdown(f"### 👤 {display_name}")
-    st.caption(f"Paired with: {partner_display}")
-    st.divider()
-    now = datetime.now(MYT)
-    st.caption(f"🗓️ {now.strftime('%A, %d %b %Y')}")
-    st.caption(f"⏰ {now.strftime('%I:%M %p')} MYT")
-    st.divider()
-    if st.button("🔄 Refresh Data", use_container_width=True):
-        st.session_state.db_schedules = fetch_schedules()
-        st.session_state.toast = "🔄 Data refreshed!"
-        st.rerun()
-    st.divider()
-    if st.button("🚪 Log Out", use_container_width=True):
-        for key in ["logged_in", "username", "db_schedules", "week_offset",
-                    "confirm_clear_groceries", "confirm_delete_recipe",
-                    "confirm_delete_grocery", "toast"]:
-            st.session_state.pop(key, None)
-        st.rerun()
+# --- TOP BAR ---
+now = datetime.now(MYT)
+col_left, col_mid, col_right = st.columns([3, 2, 2])
+with col_left:
+    st.markdown(f"### 🍳 Kitchen Co-op")
+    st.caption(f"👤 **{display_name}** · paired with **{partner_display}**")
+with col_mid:
+    st.markdown(f"🗓️ {now.strftime('%A, %d %b %Y')}")
+    st.markdown(f"⏰ {now.strftime('%I:%M %p')} MYT")
+with col_right:
+    btn1, btn2 = st.columns(2)
+    with btn1:
+        if st.button("🔄 Refresh", use_container_width=True):
+            st.session_state.db_schedules = fetch_schedules()
+            st.session_state.toast = "🔄 Data refreshed!"
+            st.rerun()
+    with btn2:
+        if st.button("🚪 Log Out", use_container_width=True):
+            for key in ["logged_in", "username", "db_schedules", "week_offset",
+                        "confirm_clear_groceries", "confirm_delete_recipe",
+                        "confirm_delete_grocery", "toast"]:
+                st.session_state.pop(key, None)
+            st.rerun()
 
-# --- MAIN ---
-st.title("🍳 Kitchen Co-op")
-st.subheader(f"Hey {display_name}! Let's coordinate meals 🥘")
+st.divider()
 
+# --- TABS ---
 tab1, tab2, tab3 = st.tabs(["📅 Schedule", "💡 Recipes", "🛒 Groceries"])
 
 # ──────────────────────────────────────────
@@ -180,10 +196,9 @@ with tab1:
 
     st.write("")
 
-    db_schedules = st.session_state.db_schedules
-    my_sched = db_schedules.get(username, {})
-
+    my_sched = st.session_state.db_schedules.get(username, {})
     my_updates = {}
+
     st.markdown("### 👤 Your Availability This Week")
     st.caption("Tick the meals you're free for each day, then hit Save.")
 
@@ -228,7 +243,7 @@ with tab1:
             st.success(f"🌙 **Shared Dinner:** {', '.join(dinner_matches)}")
         else:
             st.warning("⏳ No shared dinner slots yet.")
-    st.caption(f"💡 Hit **Refresh Data** in the sidebar to see {partner_display}'s latest schedule.")
+    st.caption(f"💡 Hit **Refresh** at the top to see {partner_display}'s latest schedule.")
 
 # ──────────────────────────────────────────
 # TAB 2: RECIPES
@@ -267,7 +282,6 @@ with tab2:
                     line += f" — [🔗 Recipe]({item['link']})"
                 st.markdown(line)
             with col_del:
-                # Confirm delete for recipes
                 if st.session_state.confirm_delete_recipe == item['id']:
                     st.warning("Sure?")
                     c1, c2 = st.columns(2)
@@ -340,7 +354,6 @@ with tab3:
 
         st.write("---")
 
-        # Clear all button with confirm
         if st.session_state.confirm_clear_groceries:
             st.warning("⚠️ This will delete ALL grocery items and reset the bill. Are you sure?")
             cc1, cc2, cc3 = st.columns([1, 1, 4])
@@ -355,12 +368,11 @@ with tab3:
                     st.session_state.confirm_clear_groceries = False
                     st.rerun()
         else:
-            if st.button("🧹 Clear All & Restart", use_container_width=False):
+            if st.button("🧹 Clear All & Restart"):
                 st.session_state.confirm_clear_groceries = True
                 st.rerun()
 
         st.markdown("### 🧾 Grocery List")
-
         h1, h2, h3, h4, h5 = st.columns([2.5, 1, 1.2, 1.5, 0.5])
         h1.markdown("**Item**")
         h2.markdown("**Price**")
