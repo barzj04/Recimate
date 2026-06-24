@@ -1,7 +1,17 @@
 import streamlit as st
 from supabase import create_client, Client
 
-# Initialize Supabase connection safely using proper cloud secrets
+# --- AUTH CONFIG (hardcoded users) ---
+USERS = {
+    "arleen": {"password": "pass1", "display": "Arleen"},
+    "roommate": {"password": "pass2", "display": "Roommate"},
+}
+ROOMMATE_PAIRS = {
+    "arleen": "roommate",
+    "roommate": "arleen",
+}
+
+# --- SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
     url = st.secrets["SUPABASE_URL"].strip()
@@ -29,101 +39,101 @@ def add_db_recipe(text):
 def delete_db_recipe(recipe_id):
     supabase.table("recipes").delete().eq("id", recipe_id).execute()
 
-# --- INTERFACE SETUP ---
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="Kitchen Co-op", page_icon="🍳", layout="wide")
-st.title("🍳 Kitchen Co-op")
-st.subheader("Coordinate meals around crazy class schedules")
 
-# --- LOAD DB DATA (cached in session to avoid repeated fetches) ---
-if "db_schedules" not in st.session_state:
-    st.session_state.db_schedules = fetch_schedules()
+# --- LOGIN SCREEN ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = None
 
-db_schedules = st.session_state.db_schedules
-roommates = list(db_schedules.keys()) if len(db_schedules) >= 2 else ["Roommate A", "Roommate B"]
+if not st.session_state.logged_in:
+    st.title("🍳 Kitchen Co-op")
+    st.subheader("Please log in to continue")
+    st.write("")
 
-# --- SESSION STATE: persist names ---
-if "r1_name" not in st.session_state:
-    st.session_state.r1_name = roommates[0]
-if "r2_name" not in st.session_state:
-    st.session_state.r2_name = roommates[1]
+    col1, col2, col3 = st.columns([1, 1.2, 1])
+    with col2:
+        username = st.text_input("Username").strip().lower()
+        password = st.text_input("Password", type="password")
+        if st.button("Log In", type="primary", use_container_width=True):
+            if username in USERS and USERS[username]["password"] == password:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.rerun()
+            else:
+                st.error("Wrong username or password.")
+    st.stop()
 
-# --- SIDEBAR: NAMES ---
+# --- LOGGED IN ---
+username = st.session_state.username
+display_name = USERS[username]["display"]
+partner_username = ROOMMATE_PAIRS[username]
+partner_display = USERS[partner_username]["display"]
+
+# Sidebar
 with st.sidebar:
-    st.header("👥 Profiles")
-    r1_input = st.text_input("Your Name", value=st.session_state.r1_name)
-    r2_input = st.text_input("Roommate's Name", value=st.session_state.r2_name)
-
-    if st.button("💾 Save Names"):
-        st.session_state.r1_name = r1_input
-        st.session_state.r2_name = r2_input
-        # Create empty schedule in DB for new names if they don't exist yet
-        if r1_input not in db_schedules:
-            empty = {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK}
-            update_db_schedule(r1_input, empty)
-        if r2_input not in db_schedules:
-            empty = {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK}
-            update_db_schedule(r2_input, empty)
-        # Refresh DB cache
-        st.session_state.db_schedules = fetch_schedules()
-        st.success("Names saved!")
-        st.rerun()
-
+    st.markdown(f"### 👤 {display_name}")
+    st.caption(f"Paired with: {partner_display}")
     st.divider()
     if st.button("🔄 Refresh Data"):
         st.session_state.db_schedules = fetch_schedules()
         st.rerun()
+    st.divider()
+    if st.button("🚪 Log Out"):
+        st.session_state.logged_in = False
+        st.session_state.username = None
+        st.session_state.db_schedules = {}
+        st.rerun()
 
-r1 = st.session_state.r1_name
-r2 = st.session_state.r2_name
+# --- MAIN APP ---
+st.title("🍳 Kitchen Co-op")
+st.subheader(f"Hey {display_name}! Let's coordinate meals 🥘")
+
+# Load schedules (cached in session)
+if "db_schedules" not in st.session_state:
+    st.session_state.db_schedules = fetch_schedules()
+
+db_schedules = st.session_state.db_schedules
+
+my_sched = db_schedules.get(username, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
+partner_sched = db_schedules.get(partner_username, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
 
 st.write("---")
 
-# --- CALENDAR TRACKER ---
-st.header("📅 Weekly Cooking Availability")
-st.caption("Tick your free slots, then hit **Save Schedule** to sync with your roommate.")
+# --- MY SCHEDULE ---
+st.header("📅 Your Weekly Availability")
+st.caption("Tick the slots when you're free to cook or eat together, then save.")
 
-r1_sched = db_schedules.get(r1, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
-r2_sched = db_schedules.get(r2, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
+my_updates = {}
+for day in DAYS_OF_WEEK:
+    st.markdown(f"**{day}**")
+    c1, c2 = st.columns(2)
+    with c1:
+        l_val = st.checkbox("🌞 Free for Lunch", value=my_sched.get(day, {}).get("Lunch", False), key=f"my_l_{day}")
+    with c2:
+        d_val = st.checkbox("🌙 Free for Dinner", value=my_sched.get(day, {}).get("Dinner", False), key=f"my_d_{day}")
+    my_updates[day] = {"Lunch": l_val, "Dinner": d_val}
 
-# Calendar Input Grid
-col_r1, col_r2 = st.columns(2)
-r1_updates, r2_updates = {}, {}
-
-with col_r1:
-    st.markdown(f"### 👤 {r1}'s Schedule")
-    for day in DAYS_OF_WEEK:
-        st.markdown(f"**{day}**")
-        c1, c2 = st.columns(2)
-        with c1:
-            l_val = st.checkbox("Free Lunch", value=r1_sched.get(day, {}).get("Lunch", False), key=f"r1_l_{day}")
-        with c2:
-            d_val = st.checkbox("Free Dinner", value=r1_sched.get(day, {}).get("Dinner", False), key=f"r1_d_{day}")
-        r1_updates[day] = {"Lunch": l_val, "Dinner": d_val}
-
-with col_r2:
-    st.markdown(f"### 👥 {r2}'s Schedule")
-    for day in DAYS_OF_WEEK:
-        st.markdown(f"**{day}**")
-        c1, c2 = st.columns(2)
-        with c1:
-            l_val = st.checkbox("Free Lunch", value=r2_sched.get(day, {}).get("Lunch", False), key=f"r2_l_{day}")
-        with c2:
-            d_val = st.checkbox("Free Dinner", value=r2_sched.get(day, {}).get("Dinner", False), key=f"r2_d_{day}")
-        r2_updates[day] = {"Lunch": l_val, "Dinner": d_val}
-
-# --- SINGLE SAVE BUTTON ---
 st.write("")
-if st.button("💾 Save Schedule", type="primary", use_container_width=True):
-    update_db_schedule(r1, r1_updates)
-    update_db_schedule(r2, r2_updates)
+if st.button("💾 Save My Schedule", type="primary", use_container_width=True):
+    update_db_schedule(username, my_updates)
     st.session_state.db_schedules = fetch_schedules()
-    st.success("✅ Schedule saved and synced!")
+    st.success("✅ Schedule saved!")
     st.rerun()
 
-# Match Calculations (shown after save, based on DB)
-st.write("")
-lunch_matches = [day for day in DAYS_OF_WEEK if r1_sched.get(day, {}).get("Lunch") and r2_sched.get(day, {}).get("Lunch")]
-dinner_matches = [day for day in DAYS_OF_WEEK if r1_sched.get(day, {}).get("Dinner") and r2_sched.get(day, {}).get("Dinner")]
+st.write("---")
+
+# --- SHARED MATCHES ---
+st.header(f"🤝 You & {partner_display}'s Overlap")
+
+# Re-read from updated session after save
+db_schedules = st.session_state.db_schedules
+my_sched_fresh = db_schedules.get(username, {})
+partner_sched_fresh = db_schedules.get(partner_username, {})
+
+lunch_matches = [day for day in DAYS_OF_WEEK if my_sched_fresh.get(day, {}).get("Lunch") and partner_sched_fresh.get(day, {}).get("Lunch")]
+dinner_matches = [day for day in DAYS_OF_WEEK if my_sched_fresh.get(day, {}).get("Dinner") and partner_sched_fresh.get(day, {}).get("Dinner")]
 
 col_m1, col_m2 = st.columns(2)
 with col_m1:
@@ -136,6 +146,8 @@ with col_m2:
         st.success(f"🌙 **Shared Dinner Days:** {', '.join(dinner_matches)}")
     else:
         st.warning("⏳ No shared dinner slots yet.")
+
+st.caption(f"💡 Hit **Refresh Data** in the sidebar to see {partner_display}'s latest schedule.")
 
 st.write("---")
 
