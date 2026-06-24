@@ -4,7 +4,7 @@ from supabase import create_client, Client
 # --- AUTH CONFIG (hardcoded users) ---
 USERS = {
     "arleen": {"password": "pass1", "display": "Arleen"},
-    "roommate": {"password": "pass2", "display": "Roommate"},
+    "roommate": {"password": "pass2", "display": "Rachel"},
 }
 ROOMMATE_PAIRS = {
     "arleen": "roommate",
