@@ -34,10 +34,14 @@ st.set_page_config(page_title="Kitchen Co-op", page_icon="🍳", layout="wide")
 st.title("🍳 Kitchen Co-op")
 st.subheader("Coordinate meals around crazy class schedules")
 
-db_schedules = fetch_schedules()
+# --- LOAD DB DATA (cached in session to avoid repeated fetches) ---
+if "db_schedules" not in st.session_state:
+    st.session_state.db_schedules = fetch_schedules()
+
+db_schedules = st.session_state.db_schedules
 roommates = list(db_schedules.keys()) if len(db_schedules) >= 2 else ["Roommate A", "Roommate B"]
 
-# --- SESSION STATE: persist names across reruns ---
+# --- SESSION STATE: persist names ---
 if "r1_name" not in st.session_state:
     st.session_state.r1_name = roommates[0]
 if "r2_name" not in st.session_state:
@@ -54,13 +58,21 @@ with st.sidebar:
         st.session_state.r2_name = r2_input
         # Create empty schedule in DB for new names if they don't exist yet
         if r1_input not in db_schedules:
-            update_db_schedule(r1_input, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
+            empty = {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK}
+            update_db_schedule(r1_input, empty)
         if r2_input not in db_schedules:
-            update_db_schedule(r2_input, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
+            empty = {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK}
+            update_db_schedule(r2_input, empty)
+        # Refresh DB cache
+        st.session_state.db_schedules = fetch_schedules()
         st.success("Names saved!")
         st.rerun()
 
-# Use saved names for the rest of the app
+    st.divider()
+    if st.button("🔄 Refresh Data"):
+        st.session_state.db_schedules = fetch_schedules()
+        st.rerun()
+
 r1 = st.session_state.r1_name
 r2 = st.session_state.r2_name
 
@@ -68,28 +80,10 @@ st.write("---")
 
 # --- CALENDAR TRACKER ---
 st.header("📅 Weekly Cooking Availability")
-st.caption("Check off the slots when you are free to cook/eat together.")
+st.caption("Tick your free slots, then hit **Save Schedule** to sync with your roommate.")
 
 r1_sched = db_schedules.get(r1, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
 r2_sched = db_schedules.get(r2, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
-
-# Match Calculations
-lunch_matches = [day for day in DAYS_OF_WEEK if r1_sched.get(day, {}).get("Lunch") and r2_sched.get(day, {}).get("Lunch")]
-dinner_matches = [day for day in DAYS_OF_WEEK if r1_sched.get(day, {}).get("Dinner") and r2_sched.get(day, {}).get("Dinner")]
-
-col_m1, col_m2 = st.columns(2)
-with col_m1:
-    if lunch_matches:
-        st.success(f"🌞 **Shared Lunch Days:** {', '.join(lunch_matches)}")
-    else:
-        st.warning("⏳ No shared lunch slots found.")
-with col_m2:
-    if dinner_matches:
-        st.success(f"🌙 **Shared Dinner Days:** {', '.join(dinner_matches)}")
-    else:
-        st.warning("⏳ No shared dinner slots found.")
-
-st.write("")
 
 # Calendar Input Grid
 col_r1, col_r2 = st.columns(2)
@@ -117,13 +111,31 @@ with col_r2:
             d_val = st.checkbox("Free Dinner", value=r2_sched.get(day, {}).get("Dinner", False), key=f"r2_d_{day}")
         r2_updates[day] = {"Lunch": l_val, "Dinner": d_val}
 
-# Auto-save to DB if checkboxes change
-if r1_updates != r1_sched:
+# --- SINGLE SAVE BUTTON ---
+st.write("")
+if st.button("💾 Save Schedule", type="primary", use_container_width=True):
     update_db_schedule(r1, r1_updates)
-    st.rerun()
-if r2_updates != r2_sched:
     update_db_schedule(r2, r2_updates)
+    st.session_state.db_schedules = fetch_schedules()
+    st.success("✅ Schedule saved and synced!")
     st.rerun()
+
+# Match Calculations (shown after save, based on DB)
+st.write("")
+lunch_matches = [day for day in DAYS_OF_WEEK if r1_sched.get(day, {}).get("Lunch") and r2_sched.get(day, {}).get("Lunch")]
+dinner_matches = [day for day in DAYS_OF_WEEK if r1_sched.get(day, {}).get("Dinner") and r2_sched.get(day, {}).get("Dinner")]
+
+col_m1, col_m2 = st.columns(2)
+with col_m1:
+    if lunch_matches:
+        st.success(f"🌞 **Shared Lunch Days:** {', '.join(lunch_matches)}")
+    else:
+        st.warning("⏳ No shared lunch slots yet.")
+with col_m2:
+    if dinner_matches:
+        st.success(f"🌙 **Shared Dinner Days:** {', '.join(dinner_matches)}")
+    else:
+        st.warning("⏳ No shared dinner slots yet.")
 
 st.write("---")
 
