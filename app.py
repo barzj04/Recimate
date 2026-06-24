@@ -5,7 +5,8 @@ import json
 @st.cache_resource
 def init_supabase() -> Client:
     url = "https://qwpladpytaygcrvuxfqq.supabase.co"
-    key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3cGxhZHB5tGF5Z2NydnV4ZnFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNzM2OTgsImV4cCI6MjA5Nzg0OTY5OH0.ChL-UX2sT351Yd9i5RxFOLwNNpPG-FK8EYrHkJXrCrY"
+    # Fixed the 't' back to a 'd' in the middle of the key string here:
+    key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3cGxhZHB5dGF5Z2NydnV4ZnFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNzM2OTgsImV4cCI6MjA5Nzg0OTY5OH0.ChL-UX2sT351Yd9i5RxFOLwNNpPG-FK8EYrHkJXrCrY"
     return create_client(url, key)
     
 supabase = init_supabase()
