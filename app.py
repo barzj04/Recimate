@@ -22,7 +22,7 @@ def update_db_schedule(name, schedule_dict):
     supabase.table("schedules").upsert({"roommate": name, "schedule": schedule_dict}).execute()
 
 def fetch_recipes():
-    response = supabase.table("recipes").select("*").order("created_at", descending=False).execute()
+    response = supabase.table("recipes").select("*").order("created_at", desc=False).execute()
     return response.data
 
 def add_db_recipe(text):
