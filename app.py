@@ -1,15 +1,13 @@
 import streamlit as st
 from supabase import create_client, Client
-import json
 
 # Initialize Supabase connection safely using proper cloud secrets
 @st.cache_resource
 def init_supabase() -> Client:
-    # .strip() removes hidden trailing spaces or newline characters from the config panel
     url = st.secrets["SUPABASE_URL"].strip()
     key = st.secrets["SUPABASE_KEY"].strip()
     return create_client(url, key)
-    
+
 supabase = init_supabase()
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -39,11 +37,32 @@ st.subheader("Coordinate meals around crazy class schedules")
 db_schedules = fetch_schedules()
 roommates = list(db_schedules.keys()) if len(db_schedules) >= 2 else ["Roommate A", "Roommate B"]
 
+# --- SESSION STATE: persist names across reruns ---
+if "r1_name" not in st.session_state:
+    st.session_state.r1_name = roommates[0]
+if "r2_name" not in st.session_state:
+    st.session_state.r2_name = roommates[1]
+
 # --- SIDEBAR: NAMES ---
 with st.sidebar:
     st.header("👥 Profiles")
-    r1 = st.text_input("Your Name", roommates[0])
-    r2 = st.text_input("Roommate's Name", roommates[1])
+    r1_input = st.text_input("Your Name", value=st.session_state.r1_name)
+    r2_input = st.text_input("Roommate's Name", value=st.session_state.r2_name)
+
+    if st.button("💾 Save Names"):
+        st.session_state.r1_name = r1_input
+        st.session_state.r2_name = r2_input
+        # Create empty schedule in DB for new names if they don't exist yet
+        if r1_input not in db_schedules:
+            update_db_schedule(r1_input, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
+        if r2_input not in db_schedules:
+            update_db_schedule(r2_input, {day: {"Lunch": False, "Dinner": False} for day in DAYS_OF_WEEK})
+        st.success("Names saved!")
+        st.rerun()
+
+# Use saved names for the rest of the app
+r1 = st.session_state.r1_name
+r2 = st.session_state.r2_name
 
 st.write("---")
 
@@ -98,7 +117,7 @@ with col_r2:
             d_val = st.checkbox("Free Dinner", value=r2_sched.get(day, {}).get("Dinner", False), key=f"r2_d_{day}")
         r2_updates[day] = {"Lunch": l_val, "Dinner": d_val}
 
-# Immediate auto-saving to DB if checkboxes change
+# Auto-save to DB if checkboxes change
 if r1_updates != r1_sched:
     update_db_schedule(r1, r1_updates)
     st.rerun()
