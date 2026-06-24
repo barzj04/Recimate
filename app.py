@@ -5,13 +5,12 @@ from datetime import datetime, timedelta, date
 # --- AUTH CONFIG ---
 USERS = {
     "arleen": {"password": "pass1", "display": "Arleen"},
-    "Rachel": {"password": "pass2", "display": "Roommate"},
+    "rachel": {"password": "pass2", "display": "Rachel"},  # lowercase key
 }
 ROOMMATE_PAIRS = {
-    "arleen": "Rachel",
-    "Rachel": "arleen",
+    "arleen": "rachel",   # ✅ lowercase
+    "rachel": "arleen",   # ✅ lowercase
 }
-
 # --- SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
